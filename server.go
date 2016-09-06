@@ -43,7 +43,7 @@ var (
 	methodsAll = []string{
 		"OPTIONS", "HEAD", "GET",
 		"PATCH", "POST", "PUT", "MKCOL", "DELETE",
-		"COPY", "MOVE", "LOCK", "UNLOCK",
+		"COPY", "MOVE", "LOCK", "UNLOCK", "PROPFIND",
 	}
 )
 
@@ -269,7 +269,7 @@ func (s *Server) handle(w http.ResponseWriter, req *httpRequest) (r *response) {
 	dataMime := req.Header.Get(HCType)
 	dataMime = strings.Split(dataMime, ";")[0]
 	dataHasParser := len(mimeParser[dataMime]) > 0
-	if len(dataMime) > 0 {
+	if len(dataMime) > 0 && req.Method != "PROPFIND" {
 		s.debug.Println("Content-Type: " + dataMime)
 		if dataMime != "multipart/form-data" && !dataHasParser && req.Method != "PUT" && req.Method != "HEAD" && req.Method != "OPTIONS" {
 			s.debug.Println("Request contains unsupported Media Type:" + dataMime)
@@ -297,6 +297,7 @@ func (s *Server) handle(w http.ResponseWriter, req *httpRequest) (r *response) {
 	w.Header().Set("Accept-Patch", "application/json, application/sparql-update")
 	w.Header().Set("Accept-Post", "text/turtle, application/json")
 	w.Header().Set("Allow", strings.Join(methodsAll, ", "))
+	w.Header().Set("DAV", "1")
 
 	switch req.Method {
 	case "OPTIONS":
@@ -327,7 +328,7 @@ func (s *Server) handle(w http.ResponseWriter, req *httpRequest) (r *response) {
 
 		return r.respond(200)
 
-	case "GET", "HEAD":
+	case "GET", "HEAD", "PROPFIND":
 		unlock := lock(resource.File)
 		defer unlock()
 
@@ -389,6 +390,11 @@ func (s *Server) handle(w http.ResponseWriter, req *httpRequest) (r *response) {
 		aclStatus, err := acl.AllowRead(resource.URI)
 		if aclStatus > 200 || err != nil {
 			return r.respond(aclStatus, handleStatusText(aclStatus, err))
+		}
+
+		if req.Method == "PROPFIND" {
+			s.webdav.ServeHTTP(w, req.Request)
+			return
 		}
 
 		if req.Method == "HEAD" {
